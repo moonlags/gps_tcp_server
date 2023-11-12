@@ -23,7 +23,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	r.Get("/", s.helloWorldHandler)
 	r.Route("/api", func(r chi.Router) {
-		r.Get("/device/{IMEI}", s.getDevicePosition)
+		r.Get("/device/{IMEI}", s.DeviceData)
 	})
 
 	return r
@@ -43,9 +43,8 @@ func (s *Server) helloWorldHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) getDevicePosition(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DeviceData(w http.ResponseWriter, r *http.Request) {
 	IMEI := chi.URLParam(r, "IMEI")
-
 	mutex := globals.Mutex()
 
 	mutex.RLock()
@@ -56,7 +55,7 @@ func (s *Server) getDevicePosition(w http.ResponseWriter, r *http.Request) {
 	}
 	mutex.RUnlock()
 
-	jsonResp, err := json.Marshal(device_data.Postitions)
+	jsonResp, err := json.Marshal(device_data)
 	if err != nil {
 		log.WithError(err).WithField("device_data", device_data).Fatal("failed to marshal json")
 	}

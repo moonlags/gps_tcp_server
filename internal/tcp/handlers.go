@@ -59,7 +59,7 @@ func handleTcpConnection(conn net.Conn, device_sessions map[string]*DeviceData, 
 		response, err := parsePacket(buffer[:n], conn.RemoteAddr(), &device_data)
 		if err != nil {
 			log.WithError(err).Error("failed to parse a packet")
-			break
+			continue
 		}
 
 		if tempLoggedIn != device_data.IsLoggedIn {
@@ -86,15 +86,15 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 	packet_length := int(packet[2])
 	protocol_number := packet[3]
 
-	if packet_length+4 >= len(packet) {
-		return nil, errors.New("invalid packet length")
-	}
+	// if packet_length+2 >= len(packet) {
+	// 	return nil, errors.New("invalid packet length")
+	// }
 
 	switch protocol_number {
 	default:
 		return nil, errors.New("not supported protocol number")
 	case 1:
-		if packet_length != 10 {
+		if packet_length != 13 {
 			return nil, errors.New("invalid packet length")
 		}
 
@@ -108,7 +108,7 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 
 		return []byte{}, nil
 	case 0x10, 0x11:
-		if packet_length != 0x13 {
+		if packet_length != 0x15 {
 			return nil, errors.New("invalid packet length")
 		} else if !device_data.IsLoggedIn {
 			return nil, errors.New("device is not logged in")
@@ -131,7 +131,7 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 
 		return packet_struct.Process(device_data, protocol_number), nil
 	case 0x13:
-		if packet_length != 5 && packet_length != 6 {
+		if packet_length != 6 && packet_length != 7 {
 			return nil, errors.New("invalid packet length")
 		} else if !device_data.IsLoggedIn {
 			return nil, errors.New("device is not logged in")
@@ -172,6 +172,18 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 		device_data.InChargingState = true
 
 		return []byte{}, nil
+	case 26, 27:
+		if !device_data.IsLoggedIn {
+			return nil, errors.New("device is not logged in")
+		}
+
+		//timeNow := time.Now()
+		// todo                                    year month day  hour minute second
+		// todo return time as if it was in hex:   23   11    12   21   53     3       0
+		// todo                                    35   17    18   24   83     3       0
+
+		//return []byte{0x78, 0x78, 7, protocol_number, byte(timeNow.Year() - 2000), byte(timeNow.Month()), byte(timeNow.Day()), byte(timeNow.Hour()), byte(timeNow.Minute()), byte(timeNow.Second()), 0x0d, 0x0a}, nil
+		return []byte{}, nil
 	}
 }
 
@@ -180,5 +192,8 @@ func ImeiToString(imei []byte) string {
 	for _, v := range imei {
 		str += strconv.Itoa(int(v))
 	}
+
+	// todo parse imei as hex containing string
+
 	return str
 }
