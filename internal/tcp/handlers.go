@@ -3,16 +3,16 @@ package tcp
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
-func TcpHandler(device_sessions map[string]*DeviceData, mutex *sync.RWMutex) {
+func TcpHandler(device_sessions map[string]*DeviceData, mutex *sync.Mutex) {
 	listener, err := NewTcpServer(55080)
 	if err != nil {
 		log.WithError(err).Fatal("failed to create new tcp listener")
@@ -31,12 +31,12 @@ func TcpHandler(device_sessions map[string]*DeviceData, mutex *sync.RWMutex) {
 	}
 }
 
-func handleTcpConnection(conn net.Conn, device_sessions map[string]*DeviceData, mutex *sync.RWMutex) {
+func handleTcpConnection(conn net.Conn, device_sessions map[string]*DeviceData, mutex *sync.Mutex) {
 	defer conn.Close()
 
 	device_data := DeviceData{
 		IMEI:                 "",
-		Postitions:           []PostitioningPacket{},
+		Posititions:          []PosititioningPacket{},
 		BatteryPower:         100,
 		LastStatusPacketTime: time.Now().Unix(),
 		StatusCooldown:       1,
@@ -86,10 +86,6 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 	packet_length := int(packet[2])
 	protocol_number := packet[3]
 
-	// if packet_length+2 >= len(packet) {
-	// 	return nil, errors.New("invalid packet length")
-	// }
-
 	switch protocol_number {
 	default:
 		return nil, errors.New("not supported protocol number")
@@ -98,7 +94,7 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 			return nil, errors.New("invalid packet length")
 		}
 
-		packet_struct := LoginPacket{ImeiToString(packet[4:12])}
+		packet_struct := LoginPacket{hex.EncodeToString(packet[4:12])}
 
 		return packet_struct.Process(device_data), nil
 	case 8:
@@ -106,7 +102,7 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 			return nil, errors.New("invalid packet length")
 		}
 
-		return []byte{}, nil
+		return []byte{0x78, 0x78, 1, 8, 0x0d, 0x0a}, nil
 	case 0x10, 0x11:
 		if packet_length != 0x15 {
 			return nil, errors.New("invalid packet length")
@@ -121,7 +117,7 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 			return nil, err
 		}
 
-		packet_struct := PostitioningPacket{
+		packet_struct := PosititioningPacket{
 			Latitude:  float32(latitude) / (30000.0 * 60.0),
 			Longitude: float32(longitude) / (30000.0 * 60.0),
 			Speed:     packet[19],
@@ -171,29 +167,19 @@ func parsePacket(packet []byte, address net.Addr, device_data *DeviceData) ([]by
 
 		device_data.InChargingState = true
 
-		return []byte{}, nil
+		return []byte{0x78, 0x78, 1, 0x82, 0x0d, 0x0a}, nil
 	case 26, 27:
 		if !device_data.IsLoggedIn {
 			return nil, errors.New("device is not logged in")
 		}
 
-		//timeNow := time.Now()
-		// todo                                    year month day  hour minute second
-		// todo return time as if it was in hex:   23   11    12   21   53     3       0
-		// todo                                    35   17    18   24   83     3       0
+		timeNow := time.Now()
 
-		//return []byte{0x78, 0x78, 7, protocol_number, byte(timeNow.Year() - 2000), byte(timeNow.Month()), byte(timeNow.Day()), byte(timeNow.Hour()), byte(timeNow.Minute()), byte(timeNow.Second()), 0x0d, 0x0a}, nil
-		return []byte{}, nil
+		return []byte{0x78, 0x78, 7, protocol_number, hexToDec(timeNow.Year() - 2000), hexToDec(int(timeNow.Month())), hexToDec(timeNow.Day()),
+			hexToDec(timeNow.Hour()), hexToDec(timeNow.Minute()), hexToDec(timeNow.Second()), 0x0d, 0x0a}, nil
 	}
 }
 
-func ImeiToString(imei []byte) string {
-	str := ""
-	for _, v := range imei {
-		str += strconv.Itoa(int(v))
-	}
-
-	// todo parse imei as hex containing string
-
-	return str
+func hexToDec(hex_byte int) byte {
+	return byte(hex_byte%10 + hex_byte/10*16)
 }
