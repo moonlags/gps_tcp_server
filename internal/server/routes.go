@@ -27,16 +27,114 @@ func (s *Server) RegisterRoutes() http.Handler {
 		r.Get("/user/{ID}/device/{IMEI}", s.DeviceData)
 		r.Post("/user/login", s.UserData)
 		r.Post("/user/link", s.LinkUser)
+		r.Post("/device/sleep", s.SleepDevice)
+		r.Post("/device/restart", s.RestartDevice)
+		r.Post("/device/shutdown", s.ShutdownDevice)
 	})
 
 	return r
 }
 
-func (s *Server) LinkUser(w http.ResponseWriter, r *http.Request) {
-	requestBody := new(LinkData)
+func (s *Server) RestartDevice(w http.ResponseWriter, r *http.Request) {
+	var requestBody struct {
+		ID   int64
+		IMEI string
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&requestBody)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	globals.UserMutex().Lock()
+
+	if globals.Users()[requestBody.ID].IMEI != requestBody.IMEI {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	globals.UserMutex().Unlock()
+	globals.Mutex().Lock()
+
+	device := globals.DeviceSessions()[requestBody.IMEI]
+	if _, err := device.Connection.Write([]byte{0x78, 0x78, 2, 0x48, 1, 0x0d, 0x0a}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	globals.Mutex().Unlock()
+	w.WriteHeader(200)
+}
+
+func (s *Server) ShutdownDevice(w http.ResponseWriter, r *http.Request) {
+	var requestBody struct {
+		ID   int64
+		IMEI string
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	globals.UserMutex().Lock()
+
+	if globals.Users()[requestBody.ID].IMEI != requestBody.IMEI {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	globals.UserMutex().Unlock()
+	globals.Mutex().Lock()
+
+	device := globals.DeviceSessions()[requestBody.IMEI]
+	if _, err := device.Connection.Write([]byte{0x78, 0x78, 2, 0x48, 2, 0x0d, 0x0a}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	globals.Mutex().Unlock()
+	w.WriteHeader(200)
+}
+
+func (s *Server) SleepDevice(w http.ResponseWriter, r *http.Request) {
+	var requestBody struct {
+		ID   int64
+		IMEI string
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	globals.UserMutex().Lock()
+
+	if globals.Users()[requestBody.ID].IMEI != requestBody.IMEI {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	globals.UserMutex().Unlock()
+	globals.Mutex().Lock()
+
+	device := globals.DeviceSessions()[requestBody.IMEI]
+	if _, err := device.Connection.Write([]byte{0x78, 0x78, 1, 0x14, 0x0d, 0x0a}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	globals.Mutex().Unlock()
+	w.WriteHeader(200)
+}
+
+func (s *Server) LinkUser(w http.ResponseWriter, r *http.Request) {
+	var requestBody struct {
+		ID   int64
+		IMEI string
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -44,7 +142,7 @@ func (s *Server) LinkUser(w http.ResponseWriter, r *http.Request) {
 	globals.Mutex().Lock()
 
 	if _, ok := globals.DeviceSessions()[requestBody.IMEI]; !ok {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -63,10 +161,11 @@ func (s *Server) LinkUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) UserData(w http.ResponseWriter, r *http.Request) {
-	requestBody := new(UserLogin)
+	var requestBody struct {
+		ID int64
+	}
 
-	err := json.NewDecoder(r.Body).Decode(requestBody)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
